@@ -1,0 +1,47 @@
+# Lightsail解約方法
+
+
+## 削除対象を調べる
+
+
+
+
+### コマンドで削除対象を調べる
+
+#
+aws lightsail get-instances
+aws lightsail get-disks
+aws lightsail get-instance-snapshots
+aws lightsail get-disk-snapshots
+aws lightsail get-load-balancers
+aws lightsail get-load-balancer-tls-certificates
+aws lightsail get-relational-database-snapshots
+aws lightsail get-container-services
+
+
+# 1. インスタンス
+aws lightsail get-instances
+# 2. ディスク（インスタンス分離ディスク含む）
+aws lightsail get-disks
+3. スナップショット（インスタンス & ディスク両方）
+aws lightsail get-instance-snapshots
+aws lightsail get-disk-snapshots
+# 4. 静的IP（Static IP）
+aws lightsail get-static-ips
+# 5. ロードバランサー
+aws lightsail get-load-balancers
+# 6. ロードバランサー証明書
+aws lightsail get-load-balancer-tls-certificates
+# 7. データベース（Managed DB）
+aws lightsail get-relational-databases
+# 8. データベース・スナップショット
+aws lightsail get-relational-database-snapshots
+# 9. DNSゾーン（Lightsail DNS）
+aws lightsail get-domains
+# 10. コンテナサービス
+aws lightsail get-container-services
+# 11. CloudFormation スタック（Lightsail Blueprints）※通常は不要
+aws lightsail get-cloud-formation-stack-records
+# 12. バンドル一覧（課金対象ではないが確認可能）
+aws lightsail get-bundles
+
