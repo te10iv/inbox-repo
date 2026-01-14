@@ -206,7 +206,7 @@ VPC エンド ポイント を 利用 せ ず に VPC 内 から AWS サービ�
 アクセス方法
 1)
 - Interface エンドポイントのリージョナル DNS 名
-  - パブリックに名前解決可能
+  - パブリックに名前解決可能(??　DNSまでは到達できるがPIPなので通信到達性はない)
     - リージョナル DNS名の例
       - vpce-xxxx.ap-northeast-1.vpce.amazonaws.com
         - ただしPIPなので、インターネットから名前解決できるわけではない
@@ -260,7 +260,7 @@ VPC エンド ポイント を 利用 せ ず に VPC 内 から AWS サービ�
 
 2)
 - Interface エンドポイントのゾーナル DNS 名
-  - パブリックに名前解決可能
+  - パブリックに名前解決可能(??　DNSまでは到達できるがPIPなので通信到達性はない)
     - リージョナル DNS名の例
       - vpce-xxxx.ap-northeast-1.vpce.amazonaws.com
         - ただしPIPなので、インターネットから名前解決できるわけではない
