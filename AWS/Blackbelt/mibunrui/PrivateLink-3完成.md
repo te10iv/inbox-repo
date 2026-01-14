@@ -271,13 +271,30 @@ VPC エンド ポイント を 利用 せ ず に VPC 内 から AWS サービ�
       - 不要なクロスゾーン通信を防止可能
       - 考慮点
         - エンドポイントごとに DNS 名が異なる
+        - アプリやジョブ定義で：SFTP_HOST_AZ1、SFTP_HOST_AZ2のような分岐が必要
+        - ヒューマンエラーにつながる
+          - 設定ミスが起きやすい
+          - AZ 追加時（3AZ構成など）に修正箇所が多い
 
 3)
-各サービスのパブリックエンドポイントの DNS 名（プライベート DNS 名の有効化）
- ・メリット
-  ・サービスごとのパブリックなリージョナル DNS 名でアクセス可能
- ・考慮点
-  ・AZ 間通信が発生する可能性がある
+- x各サービスのパブリックエンドポイントの DNS 名（プライベート DNS 名の有効化）
+- ◎サービスが元々持っている Public DNS 名 を、VPC Endpoint 経由で Private IP に向けて上書き解決する
+  - メリット
+    - サービスごとのパブリックなリージョナル DNS 名でアクセス可能
+  - 考慮点
+    - AZ間通信が発生する可能性がある
+  - 具体例
+    - 通常（Private DNS 無効）
+      - s3.ap-northeast-1.amazonaws.com
+      - → Public IP
+      - → Internet / NAT / IGW 経由
+    - Private DNS 有効
+      - s3.ap-northeast-1.amazonaws.com
+      - → Interface Endpoint の Private IP
+      - → PrivateLink 経由
+      - ✔ DNS 名は 同じ（パブリック名）
+      - ✔ でも 解決結果はプライベート
+      - 👉 名前は Public、通信は Private
 
 
 
