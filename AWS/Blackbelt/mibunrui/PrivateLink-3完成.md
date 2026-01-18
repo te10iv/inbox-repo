@@ -203,6 +203,11 @@ VPC エンド ポイント を 利用 せ ず に VPC 内 から AWS サービ�
 
 ▼Interface タイプ - アクセス方法
 
+- InterfaceエンドポイントのリージョナルDNS名
+- InterfaceエンドポイントのゾーナルDNS名
+- InterfaceエンドポイントのプライベートDNS名
+  - ◎サービスが元々持っている Public DNS 名 を、VPC Endpoint 経由で Private IP に向けて上書き解決する
+
 アクセス方法
 1)
 - Interface エンドポイントのリージョナル DNS 名
