@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 (Amazon Linux 2023) with httpd on 8080. SubnetId is manually specified.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC created by network stack
+
+  Ec2SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: EC2 subnet
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 KeyPair name
+
+  AllowedCidr:
+    Type: String
+    Default: 11.22.11.22/32
+    Description: CIDR allowed to SSH(22) and 8080
+    AllowedPattern: '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(3[0-2]|[12]?[0-9])$'
+
+  AmazonLinux2023AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and HTTP(8080)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedCidr
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref AllowedCidr
+
+  Ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinux2023AmiId
+      KeyName: !Ref KeyPairName
+      InstanceType: !Ref InstanceType
+
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          SubnetId: !Ref Ec2SubnetId
+          AssociatePublicIpAddress: true
+          GroupSet:
+            - !Ref Ec2SecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -eux
+
+          dnf update -y
+          dnf install -y httpd openssh-server
+
+          # httpd on 8080
+          sed -i 's/^Listen 80/Listen 8080/' /etc/httpd/conf/httpd.conf
+          if ! grep -q "^ServerName" /etc/httpd/conf/httpd.conf; then
+            echo "ServerName localhost" >> /etc/httpd/conf/httpd.conf
+          fi
+          systemctl enable httpd
+          systemctl restart httpd
+          echo "Hello from Amazon Linux 2023 on port 8080" > /var/www/html/index.html
+
+          # sshd keepalive
+          SSHD_CONFIG="/etc/ssh/sshd_config"
+          cp -p "${SSHD_CONFIG}" "${SSHD_CONFIG}-bk-default" || true
+          grep -qE '^\s*ClientAliveInterval\s+' "${SSHD_CONFIG}" \
+            && sed -i 's/^\s*ClientAliveInterval\s\+.*/ClientAliveInterval 120/' "${SSHD_CONFIG}" \
+            || echo "ClientAliveInterval 120" >> "${SSHD_CONFIG}"
+          grep -qE '^\s*ClientAliveCountMax\s+' "${SSHD_CONFIG}" \
+            && sed -i 's/^\s*ClientAliveCountMax\s\+.*/ClientAliveCountMax 3/' "${SSHD_CONFIG}" \
+            || echo "ClientAliveCountMax 3" >> "${SSHD_CONFIG}"
+
+          systemctl enable sshd
+          systemctl restart sshd
+
+          # SFTP-only user
+          SFTP_USER="sftpuser"
+          id "${SFTP_USER}" >/dev/null 2>&1 || useradd "${SFTP_USER}"
+          echo "${SFTP_USER}:ChangeMe123!" | chpasswd
+
+          mkdir -p "/home/${SFTP_USER}/upload"
+          chown root:root "/home/${SFTP_USER}"
+          chmod 755 "/home/${SFTP_USER}"
+          chown "${SFTP_USER}:${SFTP_USER}" "/home/${SFTP_USER}/upload"
+          chmod 700 "/home/${SFTP_USER}/upload"
+
+          # internal-sftp
+          if grep -qE '^\s*Subsystem\s+sftp\s+' "${SSHD_CONFIG}"; then
+            sed -i 's|^\s*Subsystem\s\+sftp\s\+.*$|Subsystem sftp internal-sftp|g' "${SSHD_CONFIG}"
+          else
+            echo "Subsystem sftp internal-sftp" >> "${SSHD_CONFIG}"
+          fi
+
+          if ! grep -qE "^\s*Match\s+User\s+${SFTP_USER}\b" "${SSHD_CONFIG}"; then
+            printf '\nMatch User %s\n  ChrootDirectory /home/%s\n  ForceCommand internal-sftp\n  AllowTcpForwarding no\n  X11Forwarding no\n  PasswordAuthentication yes\n  KbdInteractiveAuthentication yes\n  AuthenticationMethods password\n' \
+              "${SFTP_USER}" "${SFTP_USER}" >> "${SSHD_CONFIG}"
+          fi
+
+          systemctl restart sshd
+
+Outputs:
+  InstanceId:
+    Value: !Ref Ec2Instance

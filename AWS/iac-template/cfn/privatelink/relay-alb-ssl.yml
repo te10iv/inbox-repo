@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Relay account - Internal ALB with Security Group, IP target group,
+  and HTTPS listener for PrivateLink/NLB fronting.
+
+Parameters:
+  PJPrefix:
+    Type: String
+    Default: relay
+    Description: Resource name/tag prefix
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: "Relay account VPC ID (example: vpc-xxxxxxxx)"
+
+  AlbSubnetA:
+    Type: AWS::EC2::Subnet::Id
+    Description: ALB subnet in AZ-A
+
+  AlbSubnetB:
+    Type: AWS::EC2::Subnet::Id
+    Description: ALB subnet in AZ-B
+
+  AlbSubnetC:
+    Type: AWS::EC2::Subnet::Id
+    Description: ALB subnet in AZ-C
+
+  RelayVpcCidr:
+    Type: String
+    Default: 10.1.0.0/16
+    Description: Source CIDR allowed to access ALB listener/health from relay side
+
+  TargetVpcCidr:
+    Type: String
+    Default: 10.2.0.0/16
+    Description: Destination CIDR of backend web/account side
+
+  AcmCertificateArn:
+    Type: String
+    Description: ACM certificate ARN for ALB HTTPS listener
+
+  AlbSecurityPolicy:
+    Type: String
+    Default: ELBSecurityPolicy-TLS13-1-2-2021-06
+    Description: TLS security policy for ALB HTTPS listener
+
+  AlbListenerPort:
+    Type: Number
+    Default: 443
+    Description: ALB HTTPS listener port
+
+  TargetPort:
+    Type: Number
+    Default: 8080
+    Description: Backend web server port
+
+  HealthCheckPath:
+    Type: String
+    Default: /asp/login
+    Description: Health check path on backend web servers
+
+  StickinessDurationSeconds:
+    Type: Number
+    Default: 3600
+    Description: ALB lb_cookie stickiness duration in seconds
+
+  TargetIp1:
+    Type: String
+    Default: 10.2.11.11
+    Description: Backend target IP #1
+
+  TargetIp2:
+    Type: String
+    Default: 10.2.12.11
+    Description: Backend target IP #2
+
+  TargetIp3:
+    Type: String
+    Default: 10.2.13.11
+    Description: Backend target IP #3
+
+Resources:
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      Name: !Sub "${PJPrefix}-alb-sg"
+      GroupDescription: !Sub "${PJPrefix} internal ALB security group"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref AlbListenerPort
+          ToPort: !Ref AlbListenerPort
+          CidrIp: !Ref RelayVpcCidr
+          Description: Allow HTTPS from relay VPC / NLB side
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: !Ref TargetPort
+          ToPort: !Ref TargetPort
+          CidrIp: !Ref TargetVpcCidr
+          Description: Allow traffic to backend web servers
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-alb-sg"
+
+  InternalAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${PJPrefix}-alb-01"
+      Type: application
+      Scheme: internal
+      IpAddressType: ipv4
+      Subnets:
+        - !Ref AlbSubnetA
+        - !Ref AlbSubnetB
+        - !Ref AlbSubnetC
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: "false"
+        - Key: idle_timeout.timeout_seconds
+          Value: "60"
+        - Key: routing.http2.enabled
+          Value: "true"
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-alb"
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${PJPrefix}-alb-tg"
+      TargetType: ip
+      Protocol: HTTP
+      Port: !Ref TargetPort
+      VpcId: !Ref VpcId
+      Targets:
+        - Id: !Ref TargetIp1
+          Port: !Ref TargetPort
+          AvailabilityZone: all
+        - Id: !Ref TargetIp2
+          Port: !Ref TargetPort
+          AvailabilityZone: all
+        - Id: !Ref TargetIp3
+          Port: !Ref TargetPort
+          AvailabilityZone: all
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: !Ref HealthCheckPath
+      Matcher:
+        HttpCode: 200-399
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: "true"
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: !Sub "${StickinessDurationSeconds}"
+        - Key: deregistration_delay.timeout_seconds
+          Value: "30"
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-alb-tg"
+
+  AlbHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref InternalAlb
+      Port: !Ref AlbListenerPort
+      Protocol: HTTPS
+      SslPolicy: !Ref AlbSecurityPolicy
+      Certificates:
+        - CertificateArn: !Ref AcmCertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  AlbArn:
+    Description: ALB ARN
+    Value: !Ref InternalAlb
+
+  AlbDnsName:
+    Description: ALB DNS name
+    Value: !GetAtt InternalAlb.DNSName
+
+  AlbHostedZoneId:
+    Description: Route53 hosted zone ID for ALB alias
+    Value: !GetAtt InternalAlb.CanonicalHostedZoneID
+
+  AlbSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !Ref AlbSecurityGroup
+
+  AlbTargetGroupArn:
+    Description: ALB target group ARN
+    Value: !Ref AlbTargetGroup
+
+  AlbHttpsListenerArn:
+    Description: ALB HTTPS listener ARN
+    Value: !Ref AlbHttpsListener

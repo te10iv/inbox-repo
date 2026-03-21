@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SNS Topic and EventBridge for Health Dashboard
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+
+Resources:
+  HealthDashboardForChatbotTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub notify-slack-health-dashbord-topic-${Env}
+
+  HealthDashboardForChatbotTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: '*'
+      Topics:
+        - !Ref HealthDashboardForChatbotTopic
+
+  SubscribeHealthDashboardEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.health
+      Targets:
+        - Id: HealthDashboardForChatbotTopic
+          Arn: !Ref HealthDashboardForChatbotTopic

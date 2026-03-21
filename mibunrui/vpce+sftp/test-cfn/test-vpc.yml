@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC with Public, EC2 Private, and RDS Private subnets (2AZ). Second octet is parameterized.
+
+Parameters:
+  SecondOctet:
+    Type: Number
+    Description: "Second octet for VPC CIDR (10.<SecondOctet>.0.0/16)"
+    MinValue: 0
+    MaxValue: 255
+    Default: 0
+  PJPrefix:
+    Type: String
+    Default: temp
+
+Resources:
+  # --------------------
+  # VPC
+  # --------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub "10.${SecondOctet}.0.0/16"
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-vpc"
+
+  # --------------------
+  # Internet Gateway
+  # --------------------
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-igw"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # --------------------
+  # Subnets
+  # --------------------
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Sub "10.${SecondOctet}.1.0/24"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-a"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Sub "10.${SecondOctet}.2.0/24"
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-public-b"
+
+  PrivateEc2SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Sub "10.${SecondOctet}.11.0/24"
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-ec2-a"
+
+  PrivateEc2SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Sub "10.${SecondOctet}.12.0/24"
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-ec2-b"
+
+  PrivateRdsSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Sub "10.${SecondOctet}.21.0/24"
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-rds-a"
+
+  PrivateRdsSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Sub "10.${SecondOctet}.22.0/24"
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-private-rds-b"
+
+  # --------------------
+  # Route Tables
+  # --------------------
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-rtb-public"
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-rtb-private"
+
+  PrivateEc2SubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateEc2SubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateEc2SubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateEc2SubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateRdsSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateRdsSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateRdsSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateRdsSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+
+  # --------------------
+  # RDS Subnet Group
+  # --------------------
+  RdsSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS (private)
+      SubnetIds:
+        - !Ref PrivateRdsSubnetA
+        - !Ref PrivateRdsSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-rds-subnet-group"
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+
+  PublicSubnets:
+    Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+
+  PrivateEc2Subnets:
+    Value: !Join [",", [!Ref PrivateEc2SubnetA, !Ref PrivateEc2SubnetB]]
+
+  PrivateRdsSubnets:
+    Value: !Join [",", [!Ref PrivateRdsSubnetA, !Ref PrivateRdsSubnetB]]
+
+  RdsSubnetGroupName:
+    Value: !Ref RdsSubnetGroup

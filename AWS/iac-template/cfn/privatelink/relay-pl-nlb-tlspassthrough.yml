@@ -1,0 +1,212 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Relay account - PrivateLink provider NLB (internal) forwarding TCP/443
+  to an existing ALB listener on 443. Optionally creates a VPC Endpoint Service.
+  Assumptions - This template assumes that an ACM certificate for the ALB HTTPS listener has already been created.
+  Please revise resource name after making stack.
+
+Parameters:
+  PJPrefix:
+    Type: String
+    Default: relay
+    Description: Resource name prefix
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID in the relay account
+
+  AllowedIngressCidr:
+    Type: String
+    Default: 10.3.0.0/16
+    Description: CIDR allowed to access the NLB listener port 443
+
+  AlbDestinationCidr:
+    Type: String
+    Default: 10.1.0.0/16
+    Description: CIDR that contains the ALB/NLB side resources
+
+  ExistingAlbArn:
+    Type: String
+    Description: Existing ALB ARN in the same account and same VPC
+
+  NlbSubnetA:
+    Type: AWS::EC2::Subnet::Id
+    Description: NLB subnet in AZ-A
+
+  NlbSubnetB:
+    Type: AWS::EC2::Subnet::Id
+    Description: NLB subnet in AZ-B
+
+  NlbSubnetC:
+    Type: AWS::EC2::Subnet::Id
+    Description: NLB subnet in AZ-C
+
+  NlbPrivateIpA:
+    Type: String
+    Default: 10.1.1.4
+    Description: Fixed private IP for NLB node in subnet A
+
+  NlbPrivateIpB:
+    Type: String
+    Default: 10.1.2.4
+    Description: Fixed private IP for NLB node in subnet B
+
+  NlbPrivateIpC:
+    Type: String
+    Default: 10.1.3.4
+    Description: Fixed private IP for NLB node in subnet C
+
+  AlbHealthCheckPath:
+    Type: String
+    Default: /
+    Description: Path on ALB that returns 200 for NLB health checks
+
+  CreateEndpointService:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: Whether to create VPCEndpointService for PrivateLink
+
+  AcceptanceRequired:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: Whether endpoint connection requests require manual acceptance
+
+  ConsumerAccountId:
+    Type: String
+    Default: ''
+    Description: >
+      Optional. If specified, endpoint service permission is granted
+      to arn:aws:iam::<ConsumerAccountId>:root
+
+  EnforceInboundRulesOnPrivateLinkTraffic:
+    Type: String
+    AllowedValues: ['on', 'off']
+    Default: 'off'
+    Description: >
+      Whether NLB security group inbound rules are evaluated for traffic
+      sent through AWS PrivateLink
+
+
+Conditions:
+  UseEndpointService: !Equals [!Ref CreateEndpointService, 'true']
+  UseServicePermissions: !And
+    - !Equals [!Ref CreateEndpointService, 'true']
+    - !Not [!Equals [!Ref ConsumerAccountId, '']]
+  IsAcceptanceRequired: !Equals [!Ref AcceptanceRequired, 'true']
+
+
+Resources:
+  NlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${PJPrefix} NLB security group"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AllowedIngressCidr
+          Description: Allow inbound TCP 443 to the NLB
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AlbDestinationCidr
+          Description: Allow outbound TCP 443 from NLB to ALB
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-nlb-sg"
+  PrivateLinkNlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${PJPrefix}-pl-nlb-01"
+      Type: network
+      Scheme: internal
+      IpAddressType: ipv4
+      SecurityGroups:
+        - !Ref NlbSecurityGroup
+      EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic: !Ref EnforceInboundRulesOnPrivateLinkTraffic
+      SubnetMappings:
+        - SubnetId: !Ref NlbSubnetA
+          PrivateIPv4Address: !Ref NlbPrivateIpA
+        - SubnetId: !Ref NlbSubnetB
+          PrivateIPv4Address: !Ref NlbPrivateIpB
+        - SubnetId: !Ref NlbSubnetC
+          PrivateIPv4Address: !Ref NlbPrivateIpC
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: "false"
+        - Key: deletion_protection.enabled
+          Value: "false"
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-pl-nlb-01"
+
+  NlbToAlbTargetGroup443:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${PJPrefix}-tg-nlb-to-alb-443"
+      TargetType: alb
+      Protocol: TCP
+      Port: 443
+      VpcId: !Ref VpcId
+      Targets:
+        - Id: !Ref ExistingAlbArn
+          Port: 443
+      HealthCheckProtocol: HTTPS
+      HealthCheckPort: '443'
+      HealthCheckPath: !Ref AlbHealthCheckPath
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-tg-nlb-to-alb-443"
+
+  NlbListener443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref PrivateLinkNlb
+      Protocol: TCP
+      Port: 443
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref NlbToAlbTargetGroup443
+  EndpointService:
+    Condition: UseEndpointService
+    Type: AWS::EC2::VPCEndpointService
+    Properties:
+      AcceptanceRequired: !If [IsAcceptanceRequired, true, false]
+      NetworkLoadBalancerArns:
+        - !Ref PrivateLinkNlb
+      SupportedIpAddressTypes:
+        - ipv4
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-vpce-svc"
+  EndpointServicePermissions:
+    Condition: UseServicePermissions
+    Type: AWS::EC2::VPCEndpointServicePermissions
+    Properties:
+      ServiceId: !Ref EndpointService
+      AllowedPrincipals:
+        - !Sub "arn:aws:iam::${ConsumerAccountId}:root"
+
+Outputs:
+  PrivateLinkNlbArn:
+    Value: !Ref PrivateLinkNlb
+
+  PrivateLinkNlbDnsName:
+    Value: !GetAtt PrivateLinkNlb.DNSName
+
+  PrivateLinkNlbHostedZoneId:
+    Value: !GetAtt PrivateLinkNlb.CanonicalHostedZoneID
+
+  NlbToAlbTargetGroupArn:
+    Value: !Ref NlbToAlbTargetGroup443
+
+  EndpointServiceId:
+    Condition: UseEndpointService
+    Value: !Ref EndpointService
+

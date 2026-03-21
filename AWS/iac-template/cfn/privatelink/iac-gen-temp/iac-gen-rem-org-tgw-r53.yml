@@ -1,0 +1,203 @@
+---
+Metadata:
+  AWSToolsMetrics:
+    IaC_Generator: "arn:aws:cloudformation:ap-northeast-1:941766628229:generatedTemplate/4fc909dd-f8fe-4432-a656-30c3c9a2c393"
+Resources:
+  OrganizationsAccountCx:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Organizations::Account"
+    DeletionPolicy: "Retain"
+    Properties:
+      Email: "matsvillage+relay@gmail.com"
+      ParentIds:
+      - "r-jiro"
+      Tags: []
+      AccountName: "mahhagogo-relay"
+  EC2TransitGatewayRouteTable:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::EC2::TransitGatewayRouteTable"
+    DeletionPolicy: "Retain"
+    Properties:
+      TransitGatewayId:
+        Ref: "EC2TransitGateway"
+      Tags: []
+  OrganizationsOrganizationalUnit:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Organizations::OrganizationalUnit"
+    DeletionPolicy: "Retain"
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+        - "OrganizationsOrganization"
+        - "RootId"
+      Tags: []
+      Name: "mahhagogo--4"
+  EC2TransitGatewayVpcAttachmentSv:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::EC2::TransitGatewayVpcAttachment"
+    DeletionPolicy: "Retain"
+    Properties:
+      Options:
+        ApplianceModeSupport: "disable"
+        SecurityGroupReferencingSupport: "enable"
+        DnsSupport: "enable"
+        Ipv6Support: "disable"
+      TransitGatewayId:
+        Ref: "EC2TransitGateway"
+      VpcId: "vpc-0c26e7c80a73849e2"
+      SubnetIds:
+      - "subnet-020dd3433c3e6bb0e"
+      - "subnet-0d4abe161663015b3"
+      - "subnet-085dea1256de21dc2"
+      Tags: []
+  OrganizationsOrganization:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Organizations::Organization"
+    DeletionPolicy: "Retain"
+    Properties:
+      FeatureSet: "ALL"
+  OrganizationsPolicy:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Organizations::Policy"
+    DeletionPolicy: "Retain"
+    Properties:
+      Type: "SERVICE_CONTROL_POLICY"
+      TargetIds: []
+      Description: "Allows access to every operation"
+      Content:
+        Version: "2012-10-17"
+        Statement:
+        - Resource: "*"
+          Action: "*"
+          Effect: "Allow"
+      Tags: []
+      Name: "FullAWSAccess"
+  OrganizationsAccountYW:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Organizations::Account"
+    DeletionPolicy: "Retain"
+    Properties:
+      Email: "matsvillage+002@gmail.com"
+      ParentIds:
+      - "r-jiro"
+      Tags: []
+      AccountName: "mahhagogo2"
+  EC2KeyPairPf4keypair:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::EC2::KeyPair"
+    DeletionPolicy: "Retain"
+    Properties:
+      KeyName: "pf4-keypair"
+      KeyType: "ed25519"
+      PublicKeyMaterial: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEiV/ZIdMXFHLLiCfPjHStELfOI/foLF3RDBjI0OixKC\
+        \ pf4-keypair\n"
+      Tags: []
+  EC2TransitGateway:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::EC2::TransitGateway"
+    DeletionPolicy: "Retain"
+    Properties:
+      Description: "test-pl-tgw"
+      AssociationDefaultRouteTableId: "tgw-rtb-0e1951f18e45036a4"
+      AutoAcceptSharedAttachments: "enable"
+      DefaultRouteTablePropagation: "enable"
+      TransitGatewayCidrBlocks: []
+      PropagationDefaultRouteTableId: "tgw-rtb-0e1951f18e45036a4"
+      DefaultRouteTableAssociation: "enable"
+      VpnEcmpSupport: "enable"
+      SecurityGroupReferencingSupport: "disable"
+      DnsSupport: "enable"
+      MulticastSupport: "disable"
+      AmazonSideAsn: 64512
+      Tags:
+      - Value: "test-pl-tgw"
+        Key: "Name"
+  OrganizationsAccount:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Organizations::Account"
+    DeletionPolicy: "Retain"
+    Properties:
+      Email: "matsvillage+004@gmail.com"
+      ParentIds:
+      - "ou-jiro-3r430v98"
+      Tags:
+      - Value: "Organizations-account2"
+        Key: "Name"
+      AccountName: "mahhagogo4"
+  Route53HostedZone:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Route53::HostedZone"
+    DeletionPolicy: "Retain"
+    Properties:
+      HostedZoneFeatures:
+        EnableAcceleratedRecovery: false
+      HostedZoneConfig:
+        Comment: "HostedZone created by Route53 Registrar"
+      Name: "nico-al.link."
+  Route53HostedZoneQo:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::Route53::HostedZone"
+    DeletionPolicy: "Retain"
+    Properties:
+      HostedZoneTags:
+      - Value: "domacl.xyz"
+        Key: "Name"
+      HostedZoneConfig:
+        Comment: ""
+      HostedZoneFeatures:
+        EnableAcceleratedRecovery: false
+      Name: "domacl.xyz."
+  EC2TransitGatewayAttachment:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::EC2::TransitGatewayAttachment"
+    DeletionPolicy: "Retain"
+    Properties:
+      Options:
+        ApplianceModeSupport: "disable"
+        SecurityGroupReferencingSupport: "enable"
+        DnsSupport: "enable"
+        Ipv6Support: "disable"
+      TransitGatewayId:
+        Ref: "EC2TransitGateway"
+      VpcId: "vpc-09564b0b66e64ef59"
+      SubnetIds:
+      - "subnet-004ea372e882c725e"
+      - "subnet-0eca8d16b868eda27"
+      - "subnet-0b925e173f0364f3e"
+      Tags: []
+  EC2TransitGatewayVpcAttachment:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::EC2::TransitGatewayVpcAttachment"
+    DeletionPolicy: "Retain"
+    Properties:
+      Options:
+        ApplianceModeSupport: "disable"
+        SecurityGroupReferencingSupport: "enable"
+        DnsSupport: "enable"
+        Ipv6Support: "disable"
+      TransitGatewayId:
+        Ref: "EC2TransitGateway"
+      VpcId: "vpc-09564b0b66e64ef59"
+      SubnetIds:
+      - "subnet-004ea372e882c725e"
+      - "subnet-0eca8d16b868eda27"
+      - "subnet-0b925e173f0364f3e"
+      Tags: []
+  EC2TransitGatewayAttachmentCx:
+    UpdateReplacePolicy: "Retain"
+    Type: "AWS::EC2::TransitGatewayAttachment"
+    DeletionPolicy: "Retain"
+    Properties:
+      Options:
+        ApplianceModeSupport: "disable"
+        SecurityGroupReferencingSupport: "enable"
+        DnsSupport: "enable"
+        Ipv6Support: "disable"
+      TransitGatewayId:
+        Ref: "EC2TransitGateway"
+      VpcId: "vpc-0c26e7c80a73849e2"
+      SubnetIds:
+      - "subnet-020dd3433c3e6bb0e"
+      - "subnet-0d4abe161663015b3"
+      - "subnet-085dea1256de21dc2"
+      Tags: []

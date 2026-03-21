@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 (Amazon Linux 2023) with httpd on 8080. SubnetId is manually specified.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC created by network stack
+  Ec2SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: EC2 private subnet (e.g. 10.x.11.0/24 or 10.x.12.0/24)
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: t3.micro, t3.small, t3.medium
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 KeyPair name
+  AllowedCidr:
+    Type: String
+    Default: 111.222.111.222/32
+    Description: "CIDR allowed to SSH (22). Example: 203.0.113.10/32"
+    AllowedPattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(3[0-2]|[12]?[0-9])$
+    ConstraintDescription: "Must be a valid IPv4 CIDR like 111.222.111.222/32"
+  AmazonLinux2023AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI ID via SSM Parameter
+
+
+Resources:
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and HTTP(8080)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedCidr
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref AllowedCidr
+      Tags:
+        - Key: Name
+          Value: ec2-httpd-8080-sg
+
+  Ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref Ec2SubnetId
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+      ImageId: !Ref AmazonLinux2023AmiId
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -eux
+          dnf update -y
+          dnf install -y httpd
+          sed -i 's/^Listen 80/Listen 8080/' /etc/httpd/conf/httpd.conf
+          grep -q "^ServerName" /etc/httpd/conf/httpd.conf || \
+            echo "ServerName localhost" >> /etc/httpd/conf/httpd.conf
+          systemctl enable httpd
+          systemctl restart httpd
+          echo "Hello from Amazon Linux 2023 on port 8080" > /var/www/html/index.html
+          dnf list installed | grep openssh
+          # 2) change timeout settings to avoid disconnections
+          cp -p /etc/ssh/sshd_config /etc/ssh/sshd_config-bk-default
+          sed -i '/#ClientAliveInterval 0/a ClientAliveInterval 120' /etc/ssh/sshd_config
+          sed -i '/#ClientAliveCountMax 3/a ClientAliveCountMax 3' /etc/ssh/sshd_config
+          systemctl restart sshd
+          # 3) Enable/start sshd
+          systemctl enable sshd
+          systemctl start sshd
+          # 4) Create SFTP-only user
+          SFTP_USER="sftpuser"
+          if ! id "${SFTP_USER}" >/dev/null 2>&1; then
+            useradd "${SFTP_USER}"
+          fi
+          # Set password (demo). In production, prefer key auth and disable password auth.
+          echo "${SFTP_USER}:ChangeMe123!" | chpasswd
+          # 5) Prepare chroot directory structure
+          # ChrootDirectory must be owned by root and not writable by the user.
+          mkdir -p "/home/${SFTP_USER}/upload"
+          chown root:root "/home/${SFTP_USER}"
+          chmod 755 "/home/${SFTP_USER}"
+          chown "${SFTP_USER}:${SFTP_USER}" "/home/${SFTP_USER}/upload"
+          chmod 700 "/home/${SFTP_USER}/upload"
+          # 6) Update sshd_config for SFTP-only chroot user
+          SSHD_CONFIG="/etc/ssh/sshd_config"
+          # Ensure Subsystem uses internal-sftp (idempotent)
+          if grep -qE '^\s*Subsystem\s+sftp\s+' "${SSHD_CONFIG}"; then
+            sed -i 's|^\s*Subsystem\s\+sftp\s\+.*$|Subsystem sftp internal-sftp|g' "${SSHD_CONFIG}"
+          else
+                echo "Subsystem sftp internal-sftp" >> "${SSHD_CONFIG}"
+              fi
+              # Add Match block only if not present (idempotent)
+              if ! grep -qE "^\s*Match\s+User\s+${SFTP_USER}\b" "${SSHD_CONFIG}"; then
+                cat >> "${SSHD_CONFIG}" <<EOF
+          Match User ${SFTP_USER}
+            ChrootDirectory /home/${SFTP_USER}
+            ForceCommand internal-sftp
+            AllowTcpForwarding no
+            X11Forwarding no
+            PasswordAuthentication yes
+            KbdInteractiveAuthentication yes
+            AuthenticationMethods password
+          EOF
+              fi
+              # (Optional hardening) Disable SSH password auth globally if desired:
+              # sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' "${SSHD_CONFIG}"
+              # 7) Restart sshd to apply changes
+              systemctl restart sshd
+      Tags:
+        - Key: Name
+          Value: ec2-al2023-httpd-8080
+
+Outputs:
+  InstanceId:
+    Value: !Ref Ec2Instance

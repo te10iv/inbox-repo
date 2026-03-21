@@ -1,0 +1,234 @@
+### serverworks blog,youtube
+### 【30分AWSハンズオン(7)】Transit Gatewayを使ってVPC間通信をしてみよう
+### https://blog.serverworks.co.jp/30min-handson-tgw
+### https://www.youtube.com/watch?v=HwctHgf_P8A&t=522s
+### 作成されるもの・・・①vpc1+2subnet+ec2,②vpc2+2subnet+ec2
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Provision handson environment
+
+Parameters:
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+
+Resources:
+  VPC1:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.1.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: handson1-vpc
+  InternetGateway1:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: handson1-igw
+  InternetGatewayAttachment1:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway1
+      VpcId: !Ref VPC1
+  PublicSubnetA1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: 10.0.1.0/26
+      VpcId: !Ref VPC1
+      Tags:
+        - Key: Name
+          Value: handson1-subnet-public-a
+  PrivateSubnetA1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: 10.0.1.64/26
+      VpcId: !Ref VPC1
+      Tags:
+        - Key: Name
+          Value: handson1-subnet-private-a
+  PublicRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC1
+      Tags:
+        - Key: Name
+          Value: handson1-rtb-public
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC1
+      Tags:
+        - Key: Name
+          Value: handson1-rtb-private
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway1
+  PublicSubnetARouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA1
+      RouteTableId: !Ref PublicRouteTable1
+  PrivateSubnetARouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA1
+      RouteTableId: !Ref PrivateRouteTable1
+  SecurityGroupforEC21:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: handson1-ec2-sg
+      GroupDescription: handson1-ec2-sg
+      VpcId: !Ref VPC1
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: handson1-ec2-sg
+  WebAppInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+        - Key: Name
+          Value: handson1-ec2
+      ImageId: !Ref ImageId
+      InstanceType: t3.nano
+      DisableApiTermination: false
+      EbsOptimized: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+      UserData:
+        Fn::Base64: "#!/bin/bash -v\nexec > >(tee /var/log/user-data.log || logger -t user-data -s 2> /dev/console) 2>&1\nreboot"
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeleteOnTermination: "true"
+          DeviceIndex: "0"
+          SubnetId: !Ref PublicSubnetA1
+          GroupSet:
+            - !Ref SecurityGroupforEC21
+  VPC2:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.2.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: handson2-vpc
+  InternetGateway2:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: handson2-igw
+  InternetGatewayAttachment2:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway2
+      VpcId: !Ref VPC2
+  PublicSubnetA2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: 10.0.2.0/26
+      VpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: handson2-subnet-public-a
+  PrivateSubnetA2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: 10.0.2.64/26
+      VpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: handson2-subnet-private-a
+  PublicRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: handson2-rtb-public
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: handson2-rtb-private
+  PublicRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway2
+  PublicSubnetARouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA2
+      RouteTableId: !Ref PublicRouteTable2
+  PrivateSubnetARouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA2
+      RouteTableId: !Ref PrivateRouteTable2
+  SecurityGroupforEC22:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: handson2-ec2-sg
+      GroupDescription: handson2-ec2-sg
+      VpcId: !Ref VPC2
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: handson2-ec2-sg
+  WebAppInstance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+        - Key: Name
+          Value: handson2-ec2
+      ImageId: !Ref ImageId
+      InstanceType: t3.nano
+      DisableApiTermination: false
+      EbsOptimized: false
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+      UserData:
+        Fn::Base64: "#!/bin/bash -v\nexec > >(tee /var/log/user-data.log || logger -t user-data -s 2> /dev/console) 2>&1\nreboot"
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeleteOnTermination: "true"
+          DeviceIndex: "0"
+          SubnetId: !Ref PublicSubnetA2
+          GroupSet:
+            - !Ref SecurityGroupforEC22

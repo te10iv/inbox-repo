@@ -1,0 +1,133 @@
+# vpc+sg+ec2+nlb.yml
+AWSTemplateFormatVersion: 
+  "2010-09-09"
+Description:
+  AWS PrivateLink For SaaS
+
+Parameters:
+  EC2AMI:
+    Type: String
+  PJPrefix:
+    Type: String
+  InstanceType:
+    Type: String
+  KeyPairName:
+    Type: String
+  AllowAccountID:
+    Type: String
+
+Resources:
+  VPC: 
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-vpc"
+  
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: "ap-northeast-1a"
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-subnet"
+  
+  PrivateRouteTable: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref VPC 
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-table"
+  
+  PrivateSubnetTableAssociation: 
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+  
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "privatelink"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-ec2"
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${PJPrefix}-App"
+      ImageId: !Ref EC2AMI
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      DisableApiTermination: false
+      EbsOptimized: false
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      SubnetId: !Ref PrivateSubnet
+
+  TargetGroup: 
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      VpcId: !Ref VPC
+      Name: !Sub "${PJPrefix}-tg"
+      Protocol: TCP
+      Port: 80
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-tg"
+      Targets: 
+        - Id: !Ref EC2Instance
+          Port: 80
+      
+  NLB: 
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      Name: !Sub "${PJPrefix}-nlb"
+      Tags: 
+        - Key: Name
+          Value: !Sub "${PJPrefix}-nlb"
+      Scheme: "internal"
+      LoadBalancerAttributes: 
+        - Key: "deletion_protection.enabled"
+          Value: false
+      Subnets: 
+        - !Ref PrivateSubnet
+      Type: network
+
+  NLBListener: 
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      DefaultActions: 
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref NLB
+      Port: 80
+      Protocol: TCP
+
+  VPCEndpoint:
+    Type: AWS::EC2::VPCEndpointService
+    Properties: 
+      AcceptanceRequired: true
+      NetworkLoadBalancerArns:
+        - !Ref NLB
+      
+  VPCEndpointPermission:
+    Type: AWS::EC2::VPCEndpointServicePermissions
+    Properties: 
+      AllowedPrincipals: 
+        - !Sub "arn:aws:iam::${AllowAccountID}:root"
+      ServiceId: !Ref VPCEndpoint
+      
